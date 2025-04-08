@@ -1,13 +1,23 @@
 import sqlite3
 from sqlite3 import Error
+import os # Import os module
 
 class Database:
     def __init__(self, db_file="quiz_bowl.db"):
         self.db_file = db_file
+        # Check if the database file already exists *before* connecting
+        db_existed = os.path.exists(self.db_file)
+        
         self.conn = None
         self.create_connection()
         self.create_tables()
-        self.populate_all_questions()
+        
+        # Only populate if the database did NOT exist before this run
+        if not db_existed:
+            print("Database file not found, populating with initial questions...")
+            self.populate_all_questions()
+        else:
+            print("Database file found, skipping population.")
 
     def create_connection(self):
         """Create a database connection to the SQLite database"""
@@ -751,17 +761,18 @@ class Database:
         self._populate_course_questions("DS 3860", questions)
 
     def _populate_course_questions(self, course, questions):
-        """Helper method to populate questions for a specific course"""
-        # Clear existing questions
-        cursor = self.conn.cursor()
-        table_name = course.lower().replace(" ", "")
-        cursor.execute(f"DELETE FROM {table_name}")
-        self.conn.commit()
+        """Helper method to populate questions for a specific course (ONLY RUN IF DB IS NEW)"""
+        # We no longer need to delete here because this method is only called for a new DB
+        # cursor = self.conn.cursor()
+        # table_name = course.lower().replace(" ", "")
+        # cursor.execute(f"DELETE FROM {table_name}") 
+        # self.conn.commit()
 
         # Add new questions
+        print(f"Populating {course}...")
         for q in questions:
             self.add_question(course, q["question"], q["correct"], q["options"])
-        print(f"{course} questions populated successfully")
+        # Removed the print statement from here, it's called after populate_all_questions finishes
 
     def add_question(self, course, question_text, correct_answer, options):
         """Add a question to a specific course table"""
@@ -789,6 +800,41 @@ class Database:
         except Error as e:
             print(f"Error getting questions: {e}")
             return []
+
+    def delete_question(self, course, question_id):
+        """Delete a question from a specific course table by its ID"""
+        try:
+            cursor = self.conn.cursor()
+            table_name = course.lower().replace(" ", "")
+            cursor.execute(f"DELETE FROM {table_name} WHERE id = ?", (question_id,))
+            self.conn.commit()
+            print(f"Deleted question ID {question_id} from {table_name}")
+            return True
+        except Error as e:
+            print(f"Error deleting question ID {question_id} from {table_name}: {e}")
+            return False
+
+    def update_question(self, course, question_id, question_text, correct_answer, options):
+        """Update an existing question in a specific course table"""
+        try:
+            cursor = self.conn.cursor()
+            table_name = course.lower().replace(" ", "")
+            cursor.execute(f'''
+                UPDATE {table_name} 
+                SET question_text = ?,
+                    correct_answer = ?,
+                    option1 = ?,
+                    option2 = ?,
+                    option3 = ?,
+                    option4 = ?
+                WHERE id = ?
+            ''', (question_text, correct_answer, *options, question_id))
+            self.conn.commit()
+            print(f"Updated question ID {question_id} in {table_name}")
+            return True
+        except Error as e:
+            print(f"Error updating question ID {question_id} in {table_name}: {e}")
+            return False
 
     def close_connection(self):
         """Close the database connection"""
