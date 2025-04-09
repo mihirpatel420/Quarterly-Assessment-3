@@ -138,22 +138,31 @@ class QuizPage:
             question = self.questions[self.current_question_index]
             self.question_label.config(text=f"Q{self.current_question_index + 1}: {question['text']}")
             
-            self.selected_answer.set(None) # Deselect previous answer
+            self.selected_answer.set(None) # Deselect previous answer (unless restoring below)
+            
+            # Check if this question has already been answered/feedback given
+            already_answered = self.current_question_index in self.user_answers
             
             options = question['options']
             for i, rb in enumerate(self.radio_buttons):
-                rb.config(state="normal") # <<<<< ENABLE radio buttons
+                # Enable only if not already answered
+                rb_state = "disabled" if already_answered else "normal"
+                rb.config(state=rb_state) 
                 if i < len(options):
                     rb.config(text=options[i], value=options[i])
                 else:
+                    # Ensure unused buttons are disabled regardless
                     rb.config(text="", value="", state="disabled") 
             
-            # Restore previous answer if exists (for back navigation)
-            if self.current_question_index in self.user_answers:
+            # Restore previous answer if exists 
+            if already_answered:
                  self.selected_answer.set(self.user_answers[self.current_question_index])
-                 # If navigating back to an already answered question, keep radios disabled?
-                 # For now, let's allow changing answers when navigating back.
-                 # If feedback was shown, it will be cleared by the feedback_label clear above.
+                 # Show feedback again if navigating back to an answered question
+                 correct_answer = question['correct']
+                 if self.user_answers[self.current_question_index] == correct_answer:
+                    self.feedback_label.config(text="Correct!", foreground="green")
+                 else:
+                    self.feedback_label.config(text=f"Incorrect. Correct answer: {correct_answer}", foreground="red")
                  
             # --- Button Visibility Logic --- 
             self.back_button.grid_remove()
@@ -410,18 +419,27 @@ class AddQuestionPage:
         self.question_text = scrolledtext.ScrolledText(self.frame, wrap=tk.WORD, width=40, height=5)
         self.question_text.grid(row=2, column=1, sticky="ew", padx=5, pady=5)
 
-        correct_ans_label = ttk.Label(self.frame, text="Correct Answer:")
-        correct_ans_label.grid(row=3, column=0, sticky="w", padx=5, pady=5)
-        self.correct_ans_entry = ttk.Entry(self.frame, width=40)
-        self.correct_ans_entry.grid(row=3, column=1, sticky="ew", padx=5, pady=5)
-        
+        # --- Options Entries (Define before Correct Answer Combobox) ---
         self.option_entries = []
+        self.option_vars = [] # Store StringVars for options
         for i in range(4):
             option_label = ttk.Label(self.frame, text=f"Option {i+1}:")
-            option_label.grid(row=4+i, column=0, sticky="w", padx=5, pady=5)
-            entry = ttk.Entry(self.frame, width=40)
-            entry.grid(row=4+i, column=1, sticky="ew", padx=5, pady=5)
+            option_label.grid(row=3+i, column=0, sticky="w", padx=5, pady=5)
+            var = tk.StringVar()
+            entry = ttk.Entry(self.frame, width=40, textvariable=var)
+            entry.grid(row=3+i, column=1, sticky="ew", padx=5, pady=5)
+            # Update dropdown when option text changes
+            var.trace_add("write", self._update_correct_answer_choices) 
             self.option_entries.append(entry)
+            self.option_vars.append(var)
+            
+        # --- Correct Answer Combobox --- 
+        correct_ans_label = ttk.Label(self.frame, text="Correct Answer:")
+        correct_ans_label.grid(row=7, column=0, sticky="w", padx=5, pady=5) # Adjusted row
+        self.correct_ans_var = tk.StringVar()
+        self.correct_ans_combobox = ttk.Combobox(self.frame, textvariable=self.correct_ans_var, state="readonly", width=37)
+        self.correct_ans_combobox.grid(row=7, column=1, sticky="ew", padx=5, pady=5) # Adjusted row
+        self._update_correct_answer_choices() # Initial population
         
         self.feedback_label = ttk.Label(self.frame, text="", font=("Arial", 10))
         self.feedback_label.grid(row=8, column=0, columnspan=2, pady=10)
@@ -437,39 +455,66 @@ class AddQuestionPage:
         self.frame.columnconfigure(1, weight=1)
         # Rows configured implicitly by widget placement
 
+    def _update_correct_answer_choices(self, *args): # Accept trace args
+        """Update the values in the correct answer combobox based on option entries."""
+        current_options = [var.get().strip() for var in self.option_vars if var.get().strip()] # Get non-empty options
+        
+        # Keep track of the currently selected correct answer
+        current_selection = self.correct_ans_var.get()
+        
+        # Update combobox values
+        if current_options:
+            self.correct_ans_combobox["values"] = current_options
+            self.correct_ans_combobox.config(state="readonly")
+            # If previous selection is still valid, restore it
+            if current_selection in current_options:
+                self.correct_ans_var.set(current_selection)
+            else:
+                # Optionally set to first available option or leave blank?
+                # Setting to first option for now
+                 self.correct_ans_var.set(current_options[0])
+        else:
+            # No options entered yet, disable combobox
+            self.correct_ans_combobox["values"] = []
+            self.correct_ans_var.set("")
+            self.correct_ans_combobox.config(state="disabled")
+
     def load_for_edit(self, question_details):
-        """Load existing question data into the form for editing."""
         self.mode = 'edit'
         self.edit_question_id = question_details["id"]
-        
-        # Update UI elements
         self.title_label.config(text="Edit Question")
         self.save_button.config(text="Update Question")
-        self.feedback_label.config(text="") # Clear previous feedback
-        
-        # Populate fields
-        self.course_var.set(question_details["course"]) 
-        # Disable course editing? Or allow moving question to another course?
-        # self.course_combobox.config(state="disabled") # Optional: Prevent changing course during edit
-        
+        self.feedback_label.config(text="")
+        self.course_var.set(question_details["course"])
         self.question_text.delete("1.0", tk.END)
         self.question_text.insert("1.0", question_details["question"])
         
-        self.correct_ans_entry.delete(0, tk.END)
-        self.correct_ans_entry.insert(0, question_details["correct_answer"])
-        
-        for i, entry in enumerate(self.option_entries):
-            entry.delete(0, tk.END)
+        # Load options first
+        for i, var in enumerate(self.option_vars):
             if i < len(question_details["options"]):
-                entry.insert(0, question_details["options"][i])
+                var.set(question_details["options"][i])
+            else:
+                var.set("")
+        
+        # Set correct answer AFTER options are loaded and dropdown is populated
+        # _update_correct_answer_choices should be triggered by setting option vars
+        # Now set the correct answer variable
+        if question_details["correct_answer"] in question_details["options"]:
+            self.correct_ans_var.set(question_details["correct_answer"])
+        else:
+             self.correct_ans_var.set("") # Handle potential inconsistency
+             
+        # Final update just in case trace didn't catch everything
+        self._update_correct_answer_choices()
 
     def save_or_update_question(self):
         course = self.course_var.get()
-        question = self.question_text.get("1.0", tk.END).strip() 
-        correct_answer = self.correct_ans_entry.get().strip()
-        options = [entry.get().strip() for entry in self.option_entries]
+        question = self.question_text.get("1.0", tk.END).strip()
+        # Get correct answer from combobox variable
+        correct_answer = self.correct_ans_var.get().strip()
+        options = [var.get().strip() for var in self.option_vars]
         
-        # Validation (same as before)
+        # Validation 
         if not course or not question or not correct_answer or not all(options):
             self.feedback_label.config(text="Error: All fields are required.", foreground="red")
             return
@@ -478,28 +523,27 @@ class AddQuestionPage:
              self.feedback_label.config(text="Error: Exactly 4 options are required.", foreground="red")
              return
              
-        if correct_answer not in options:
-            self.feedback_label.config(text="Error: Correct answer must be one of the options.", foreground="red")
-            return
+        # Validation: correct_answer must be one of the non-empty options
+        # (Handled implicitly by how the dropdown is populated, but good check)
+        valid_options = [opt for opt in options if opt]
+        if correct_answer not in valid_options:
+             self.feedback_label.config(text="Error: Correct answer must be selected from the dropdown.", foreground="red")
+             return
 
         if self.mode == 'edit' and self.edit_question_id is not None:
-            # --- Update existing question --- 
             success = self.main_app.db.update_question(
                 course, self.edit_question_id, question, correct_answer, options
             )
             if success:
                 self.feedback_label.config(text=f"Question ID {self.edit_question_id} updated successfully!", foreground="green")
-                # Optionally go back automatically after update?
-                # self.go_back()
             else:
                 self.feedback_label.config(text="Error: Failed to update question.", foreground="red")
 
         elif self.mode == 'add':
-            # --- Add new question --- 
             success = self.main_app.db.add_question(course, question, correct_answer, options)
             if success:
                 self.feedback_label.config(text=f"Question added successfully to {course}!", foreground="green")
-                self.clear_fields(reset_mode=False) # Clear fields but stay in add mode
+                self.clear_fields(reset_mode=False) 
             else:
                 self.feedback_label.config(text="Error: Failed to add question to database.", foreground="red")
         else:
@@ -511,33 +555,27 @@ class AddQuestionPage:
             self.edit_question_id = None
             self.title_label.config(text="Add New Question")
             self.save_button.config(text="Save Question")
-            # self.course_combobox.config(state="readonly") # Re-enable if disabled during edit
             
         self.question_text.delete("1.0", tk.END)
-        self.correct_ans_entry.delete(0, tk.END)
-        for entry in self.option_entries:
-            entry.delete(0, tk.END)
-        self.course_combobox.set(self.courses[0]) # Reset course selection
+        # Clear option variables (this will trigger update for correct answer dropdown)
+        for var in self.option_vars:
+            var.set("")
+        self.course_combobox.set(self.courses[0]) 
         self.feedback_label.config(text="") 
+        # Correct answer var/combo will be cleared by _update_correct_answer_choices
 
     def go_back(self):
-        self.clear_fields(reset_mode=True) # Ensure reset to 'add' mode when leaving
+        self.clear_fields(reset_mode=True) 
         self.hide()
-        # Go back to Manage page if coming from edit, else dashboard? For now, always dashboard.
         self.main_app.show_admin_dashboard()
 
     def show(self):
-        # If not in edit mode, ensure fields are clear and UI is for 'add'
         if self.mode == 'add':
              self.clear_fields(reset_mode=True)
-        # If in edit mode, load_for_edit should have already set UI
-        
-        self.feedback_label.config(text="") # Clear feedback on show
+        self.feedback_label.config(text="") 
         self.frame.lift()
     
     def hide(self):
-        # Consider clearing fields when hiding to prevent briefly showing old data
-        # self.clear_fields(reset_mode=True)
         self.frame.lower()
 
 class ManageQuestionsPage: 
@@ -819,17 +857,22 @@ class QuizBowlApp:
         y = (screen_height - window_height) // 2
         root.geometry(f"{window_width}x{window_height}+{x}+{y}")
         
+        # --- Style Configuration --- 
+        style = ttk.Style(root)
+        # Define a custom style for larger buttons with bigger font
+        style.configure("Large.TButton", font=("Arial", 30), padding=(60, 120)) # Increased vertical padding significantly to 120
+        
         # Create main frame
         self.main_frame = ttk.Frame(root, padding="20")
         self.main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
         # Add decorative welcome label
-        welcome_label = ttk.Label(self.main_frame, text="Welcome to the Quiz Bowl", font=("Arial", 18, "bold"))
+        welcome_label = ttk.Label(self.main_frame, text="Welcome to the Quiz Bowl", font=("Arial", 50, "bold")) # Increased font size to 50
         welcome_label.grid(row=0, column=0, columnspan=5, pady=(10, 30)) # Span all columns, add padding
         
-        # Create buttons with fixed width
-        take_quiz_button = ttk.Button(self.main_frame, text="Take Quiz", command=self.take_quiz, width=15)
-        admin_button = ttk.Button(self.main_frame, text="Admin", command=self.admin_login, width=15)
+        # Create buttons with fixed width and apply the custom style
+        take_quiz_button = ttk.Button(self.main_frame, text="Take Quiz", command=self.take_quiz, style="Large.TButton")
+        admin_button = ttk.Button(self.main_frame, text="Admin", command=self.admin_login, style="Large.TButton")
         
         # Configure grid for horizontal layout with equal spacing
         self.main_frame.grid_rowconfigure(0, weight=1)  # Welcome Label row (pushes down)
@@ -843,8 +886,8 @@ class QuizBowlApp:
         self.main_frame.grid_columnconfigure(4, weight=1)  # Right space
         
         # Place buttons with equal spacing (now on row 1)
-        take_quiz_button.grid(row=1, column=1, padx=10)
-        admin_button.grid(row=1, column=3, padx=10)
+        take_quiz_button.grid(row=1, column=1, padx=10, sticky="nsew") # Changed sticky to nsew
+        admin_button.grid(row=1, column=3, padx=10, sticky="nsew") # Changed sticky to nsew
         
         # Configure grid weights
         root.columnconfigure(0, weight=1)
