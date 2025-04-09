@@ -13,7 +13,7 @@ class CourseSelectionPage:
         self.frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
         # Create title label
-        title_label = ttk.Label(self.frame, text="Select a Course", font=("Arial", 16, "bold"))
+        title_label = ttk.Label(self.frame, text="Select a Course", font=("Arial", 35, "bold"))
         title_label.grid(row=0, column=0, columnspan=2, pady=(0, 20))
         
         # Create course buttons
@@ -845,11 +845,33 @@ class QuizBowlApp:
         self.root = root
         self.root.title("Quiz Bowl")
         
+        # --- Style Configuration --- 
+        style = ttk.Style(root)
+        try:
+            # Attempt to use a cleaner theme
+            style.theme_use('clam') 
+        except tk.TclError:
+            print("Theme 'clam' not available, using default.")
+            
+        # Set a consistent background color
+        background_color = "#f0f0f0"
+        self.root.config(bg=background_color)
+        style.configure('.', background=background_color) # Apply to root style
+        style.configure('TFrame', background=background_color) # Apply to Frames
+        style.configure('TLabel', background=background_color) # Apply to Labels
+        style.configure('TRadiobutton', background=background_color) # Apply to Radiobuttons
+        # Note: TButton background might be theme-specific, but let's try
+        style.configure('TButton', background=background_color) 
+
+        # Define a custom style for larger buttons with bigger font
+        # Inherit background from default TButton if possible
+        style.configure("Large.TButton", font=("Arial", 30), padding=(60, 120)) 
+        
         # Initialize database connection
         self.db = Database()
         
         # Configure window size and position
-        window_width = 900 # Keep width for View/Manage Questions page
+        window_width = 900 
         window_height = 600 
         screen_width = root.winfo_screenwidth()
         screen_height = root.winfo_screenheight()
@@ -857,22 +879,17 @@ class QuizBowlApp:
         y = (screen_height - window_height) // 2
         root.geometry(f"{window_width}x{window_height}+{x}+{y}")
         
-        # --- Style Configuration --- 
-        style = ttk.Style(root)
-        # Define a custom style for larger buttons with bigger font
-        style.configure("Large.TButton", font=("Arial", 30), padding=(60, 120)) # Increased vertical padding significantly to 120
-        
-        # Create main frame
+        # Create main frame (will inherit background from TFrame style)
         self.main_frame = ttk.Frame(root, padding="20")
         self.main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
-        # Add decorative welcome label
-        welcome_label = ttk.Label(self.main_frame, text="Welcome to the Quiz Bowl", font=("Arial", 50, "bold")) # Increased font size to 50
-        welcome_label.grid(row=0, column=0, columnspan=5, pady=(10, 30)) # Span all columns, add padding
+        # Add decorative welcome label (will inherit background from TLabel style)
+        welcome_label = ttk.Label(self.main_frame, text="Welcome to the Quiz Bowl", font=("Arial", 50, "bold")) 
+        welcome_label.grid(row=0, column=0, columnspan=5, pady=(10, 30)) 
         
         # Create buttons with fixed width and apply the custom style
-        take_quiz_button = ttk.Button(self.main_frame, text="Take Quiz", command=self.take_quiz, style="Large.TButton")
-        admin_button = ttk.Button(self.main_frame, text="Admin", command=self.admin_login, style="Large.TButton")
+        take_quiz_button = ttk.Button(self.main_frame, text="Take Quiz", command=self.take_quiz, style="Large.TButton") 
+        admin_button = ttk.Button(self.main_frame, text="Admin", command=self.admin_login, style="Large.TButton") 
         
         # Configure grid for horizontal layout with equal spacing
         self.main_frame.grid_rowconfigure(0, weight=1)  # Welcome Label row (pushes down)
